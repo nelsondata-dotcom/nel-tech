@@ -1,0 +1,172 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isBootstrapEmail(email) {
+      return email == 'manassehofosu55@gmail.com';
+    }
+
+    function isAdmin() {
+      // Check if user has admin role in Firestore
+      // We use exists() first to avoid errors if doc doesn't exist
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Helpers ---
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) 
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'createdAt', 'preferences', 'businessProfile', 'updatedAt'])
+        && data.uid is string
+        && data.email is string
+        && (data.role == 'user' || data.role == 'admin');
+    }
+
+    function isValidFinancialRecord(data) {
+      return data.keys().hasAll(['userId', 'period', 'revenue'])
+        && data.keys().hasOnly(['userId', 'period', 'revenue', 'costOfSales', 'operatingExpenses', 'cashBalance', 'currentAssets', 'currentLiabilities', 'totalAssets', 'totalLiabilities', 'equity', 'loanRepayments', 'createdAt', 'updatedAt'])
+        && data.userId is string
+        && data.period.matches('^\\d{4}-\\d{2}$')
+        && data.revenue is number;
+    }
+
+    function isValidChat(data) {
+      return data.keys().hasAll(['userId', 'messages'])
+        && data.keys().hasOnly(['userId', 'messages', 'updatedAt'])
+        && data.userId is string
+        && data.messages is list;
+    }
+
+    function isValidReport(data) {
+      return data.keys().hasAll(['userId', 'title', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'title', 'period', 'content', 'createdAt'])
+        && data.userId is string;
+    }
+
+    function isValidSiteContent(data) {
+      return data.keys().hasAll(['slug', 'content'])
+        && data.keys().hasOnly(['slug', 'content', 'updatedAt'])
+        && data.slug is string;
+    }
+
+    function isValidEducationArticle(data) {
+      return data.keys().hasAll(['title', 'content', 'category'])
+        && data.keys().hasOnly(['title', 'content', 'category', 'author', 'createdAt', 'updatedAt'])
+        && data.title is string
+        && data.content is string;
+    }
+
+    function isValidAnnouncement(data) {
+      return data.keys().hasAll(['title', 'message', 'active', 'createdAt'])
+        && data.keys().hasOnly(['title', 'message', 'type', 'active', 'createdAt', 'expiresAt'])
+        && data.title is string
+        && data.message is string
+        && data.active is bool;
+    }
+
+    function isValidBankMetric(data) {
+      return data.keys().hasAll(['name', 'car', 'npl', 'totalAssets'])
+        && data.keys().hasOnly(['name', 'car', 'npl', 'totalAssets', 'marketShare', 'profitBeforeTax', 'roa', 'strengths', 'weaknesses', 'updatedAt'])
+        && data.name is string
+        && data.car is number
+        && data.npl is number;
+    }
+
+    // --- Routes ---
+    
+    // Site Content (Global)
+    match /siteContent/{contentId} {
+      allow read: if true; 
+      allow write: if isAdmin() && isValidSiteContent(incoming());
+    }
+
+    // Education Articles
+    match /educationArticles/{articleId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidEducationArticle(incoming());
+    }
+
+    // Announcements
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidAnnouncement(incoming());
+    }
+
+    // Bank Metrics
+    match /bankMetrics/{bankId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidBankMetric(incoming());
+    }
+
+    // User Profiles
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      
+      // Allow creation: normal users must be 'user', bootstrap admin can be 'admin'
+      allow create: if isOwner(userId) && isValidUser(incoming()) && 
+                    (incoming().role == 'user' || (isBootstrapEmail(request.auth.token.email) && incoming().role == 'admin'));
+      
+      // Allow update: 
+      // 1. Owner can update everything EXCEPT role
+      // 2. Bootstrap admin can promote themselves to 'admin'
+      // 3. Existing admin can update anything
+      allow update: if isValidUser(incoming()) && (
+        (isOwner(userId) && incoming().role == existing().role) || 
+        (isOwner(userId) && isBootstrapEmail(request.auth.token.email) && incoming().role == 'admin') ||
+        isAdmin()
+      );
+    }
+
+    // Financial Records
+    match /users/{userId}/financialRecords/{recordId} {
+      allow list, get: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidId(recordId) && isValidFinancialRecord(incoming()) && incoming().userId == userId;
+      allow update: if (isOwner(userId) || isAdmin()) && isValidId(recordId) && isValidFinancialRecord(incoming())
+        && incoming().userId == existing().userId; 
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // Chat History
+    match /users/{userId}/chats/{chatId} {
+      allow list, get: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidId(chatId) && isValidChat(incoming()) && incoming().userId == userId;
+      allow update: if (isOwner(userId) || isAdmin()) && isValidId(chatId) && isValidChat(incoming())
+        && incoming().userId == existing().userId;
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // Reports
+    match /users/{userId}/reports/{reportId} {
+      allow list, get: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidId(reportId) && isValidReport(incoming()) && incoming().userId == userId;
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Ghana SME Financial Health AI",
+  "description": "An AI-powered financial analysis platform for Ghanaian small businesses to manage cash flow, calculate ratios, and generate professional reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

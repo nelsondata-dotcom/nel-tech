@@ -1,0 +1,6 @@
+{
+  "summary": "Implementation plan for the Ghana Bank Analysis feature.\nIncludes:\n- Data model for Bank Metrics (CAR, NPL, Assets, Profit, RoA)\n- Admin CMS for updating bank performance data\n- Public Dashboard for SMEs to compare bank strengths and weaknesses\n- Interactive charts and health indicators for each major Ghanaian bank",
+  "updatedAt": "2026-11-05T02:59:36.697552860Z",
+  "requestFeedback": true,
+  "userFacing": true
+}
